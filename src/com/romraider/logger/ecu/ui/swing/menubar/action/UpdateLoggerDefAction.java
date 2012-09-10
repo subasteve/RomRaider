@@ -19,7 +19,7 @@
 
 package com.romraider.logger.ecu.ui.swing.menubar.action;
 
-import static com.centerkey.utils.BareBonesBrowserLaunch.openURL;
+import com.romraider.util.Browser;
 import static com.romraider.Version.LOGGER_DEFS_URL;
 import com.romraider.logger.ecu.EcuLogger;
 import com.romraider.swing.menubar.action.AbstractAction;
@@ -32,6 +32,6 @@ public final class UpdateLoggerDefAction extends AbstractAction {
     }
 
     public void actionPerformed(ActionEvent actionEvent) {
-        openURL(LOGGER_DEFS_URL);
+        Browser.openURL(LOGGER_DEFS_URL);
     }
 }

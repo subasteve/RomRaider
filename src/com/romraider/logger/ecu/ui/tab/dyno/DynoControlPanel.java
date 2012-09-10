@@ -19,9 +19,9 @@
 
 package com.romraider.logger.ecu.ui.tab.dyno;
 
-import static com.centerkey.utils.BareBonesBrowserLaunch.openURL;
 import static com.romraider.Version.CARS_DEFS_URL;
 
+import com.romraider.util.Browser;
 import com.romraider.Settings;
 import com.romraider.editor.ecu.ECUEditor;
 import com.romraider.logger.ecu.definition.EcuDataConvertor;
@@ -1552,7 +1552,7 @@ public final class DynoControlPanel extends JPanel {
                     "Cars definition file not found.\nGo online to download the latest definition file?",
                     "Configuration", DEFAULT_OPTION, WARNING_MESSAGE, null, options, options[0]);
             if (answer == 0) {
-                openURL(CARS_DEFS_URL);
+                Browser.openURL(CARS_DEFS_URL);
             } else {
                 showMessageDialog(parent, MISSING_CAR_DEF +
                         " file from the installation or profiles or definitions directory.\nDyno feature will not be available until this file is present.", "Notice", WARNING_MESSAGE);

@@ -48,7 +48,7 @@ import javax.swing.JMenuItem;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JSeparator;
 
-import com.centerkey.utils.BareBonesBrowserLaunch;
+import com.romraider.util.Browser;
 import com.romraider.editor.ecu.ECUEditor;
 import com.romraider.logger.ecu.EcuLogger;
 import com.romraider.maps.Rom;
@@ -338,7 +338,7 @@ public class ECUEditorMenuBar extends JMenuBar implements ActionListener {
             parent.statusPanel.update("Ready...", 0);
 
         } else if (e.getSource() == updateDefinition) {
-            BareBonesBrowserLaunch.openURL(ECU_DEFS_URL);
+            Browser.openURL(ECU_DEFS_URL);
 
         } else if (e.getSource() == launchRamTuneTestApp) {
             RamTuneTestApp.startTestApp(DISPOSE_ON_CLOSE);

@@ -19,7 +19,7 @@
 
 package com.romraider.editor.ecu;
 
-import com.centerkey.utils.BareBonesBrowserLaunch;
+import com.romraider.util.Browser;
 import com.romraider.Settings;
 import static com.romraider.Version.ECU_DEFS_URL;
 import static com.romraider.Version.PRODUCT_NAME;
@@ -155,7 +155,7 @@ public class ECUEditor extends AbstractFrame {
                     options,
                     options[0]);
             if (answer == 0) {
-                BareBonesBrowserLaunch.openURL(ECU_DEFS_URL);
+                Browser.openURL(ECU_DEFS_URL);
             } else {
                 showMessageDialog(this,
                         "ECU definition files need to be configured before ROM images can be opened.\nMenu: ECU Definitions > ECU Definition Manager...",
