@@ -19,6 +19,7 @@
 
 package com.romraider.net;
 
+import com.romraider.util.Browser;
 import javax.swing.JLabel;
 import java.awt.Font;
 import java.awt.FontMetrics;
@@ -51,7 +52,7 @@ public class URL extends JLabel implements MouseListener {
     }
 
     public void mouseClicked(MouseEvent e) {
-        BrowserControl.displayURL(url);
+        Browser.openURL(url);
     }
 
     public void mousePressed(MouseEvent e) {

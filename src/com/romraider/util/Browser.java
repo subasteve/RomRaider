@@ -34,7 +34,7 @@ import java.io.InputStream;
 public final class Browser{
 	
 	private final static String OS = System.getProperty("os.name");
-	private final static String BROWSERS[] = {"firefox", "opera", "konqueror", "epiphany", "mozilla", "netscape", "chromium", "iceweasel"};
+	private final static String BROWSERS[] = { "chrome", "firefox", "opera", "konqueror", "epiphany", "mozilla", "netscape", "chromium", "iceweasel", "conkeror", "midori", "kazehakase"};
 	
 	/**
 	* Opens a browser to specified URL.
