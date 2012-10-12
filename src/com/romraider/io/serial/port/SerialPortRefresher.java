@@ -26,8 +26,19 @@ import org.apache.log4j.Logger;
 
 import static org.apache.log4j.Logger.getLogger;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Set;
 import java.util.TreeSet;
+
+import java.nio.file.Files;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.FileVisitResult;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+import java.io.IOException;
 
 public final class SerialPortRefresher implements Runnable {
     private static final Logger LOGGER = getLogger(SerialPortRefresher.class);
@@ -75,14 +86,68 @@ public final class SerialPortRefresher implements Runnable {
     }
 
     private Set<String> listSerialPorts() {
-        List<CommPortIdentifier> portIdentifiers = serialPortDiscoverer.listPorts();
-        Set<String> portNames = new TreeSet<String>();
-        for (CommPortIdentifier portIdentifier : portIdentifiers) {
-            String portName = portIdentifier.getName();
-            if (!portNames.contains(portName)) {
-                portNames.add(portName);
-            }
+    	final String OS = System.getProperty("os.name");
+    	Set<String> portNames = new TreeSet<String>();
+    	if(OS.contains("windows") || OS.contains("Windows")){
+		List<CommPortIdentifier> portIdentifiers = serialPortDiscoverer.listPorts();
+		for (CommPortIdentifier portIdentifier : portIdentifiers) {
+		    String portName = portIdentifier.getName();
+		    if (!portNames.contains(portName)) {
+		        portNames.add(portName);
+		    }
+		}
+        }else{
+        	PORTS.clear();
+        	try{
+			Files.walkFileTree(Paths.get("/dev"), new SerialPortRefresher.Visit());
+		}catch(final Exception e){
+			//LOGGER.writeError(e);
+		}
+		for(final String PORT : PORTS){
+			portNames.add(PORT);
+		}
         }
         return portNames;
     }
+    
+    private final static Collection<String> PORTS = new ArrayList<String>();
+    
+    public static class Visit extends SimpleFileVisitor<Path>{
+
+		public FileVisitResult preVisitDirectory(final Path DIR, final BasicFileAttributes ATTR){
+			//System.out.format("Scanning %s%n", DIR);
+			if(DIR.toString().equals("/dev")){
+				return FileVisitResult.CONTINUE;
+			}else{
+				return FileVisitResult.SKIP_SUBTREE;
+			}
+		}
+
+		public FileVisitResult postVisitDirectory(final Path DIR, final IOException E) {
+			//System.out.format("Scaned %s%n", DIR);
+			return FileVisitResult.CONTINUE;
+		}
+
+		public FileVisitResult visitFileFailed(final Path FILE, final IOException E) {
+			E.printStackTrace();
+			return FileVisitResult.CONTINUE;
+		}
+
+		public FileVisitResult visitFile(final Path FILE, final BasicFileAttributes ATTR) {
+			//if(ATTR.isRegularFile()){
+				//System.out.format("Regular file: %s%n", FILE);
+			//}
+			if(FILE.toString().contains("ttyACM")){
+				//System.out.println(FILE.toString());
+				try{
+					if(!PORTS.contains(FILE.toString())){
+						PORTS.add(FILE.toString());
+					}
+				}catch(final Exception e){}
+			}
+			//System.out.println("(" + ATTR.size() + "bytes)");
+			return FileVisitResult.CONTINUE;
+		}
+
+	}
 }
