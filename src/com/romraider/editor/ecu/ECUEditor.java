@@ -24,24 +24,6 @@ import com.romraider.Settings;
 import static com.romraider.Version.ECU_DEFS_URL;
 import static com.romraider.Version.PRODUCT_NAME;
 import static com.romraider.Version.VERSION;
-import com.romraider.logger.ecu.ui.handler.table.TableUpdateHandler;
-import com.romraider.maps.Rom;
-import com.romraider.maps.Table;
-import com.romraider.net.URL;
-import com.romraider.swing.AbstractFrame;
-import com.romraider.swing.ECUEditorMenuBar;
-import com.romraider.swing.ECUEditorToolBar;
-import com.romraider.swing.JProgressPane;
-import com.romraider.swing.MDIDesktopPane;
-import com.romraider.swing.RomTree;
-import com.romraider.swing.RomTreeNode;
-import com.romraider.swing.RomTreeRootNode;
-import com.romraider.swing.TableFrame;
-import com.romraider.util.SettingsManager;
-import com.romraider.util.SettingsManagerImpl;
-import com.romraider.xml.DOMRomUnmarshaller;
-import com.romraider.xml.RomNotFoundException;
-import com.sun.org.apache.xerces.internal.parsers.DOMParser;
 import static javax.swing.JOptionPane.DEFAULT_OPTION;
 import static javax.swing.JOptionPane.ERROR_MESSAGE;
 import static javax.swing.JOptionPane.INFORMATION_MESSAGE;
@@ -55,7 +37,9 @@ import static javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.ActionEvent;
@@ -77,11 +61,35 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
+import javax.swing.SwingWorker;
 import javax.swing.tree.TreePath;
 
 import org.w3c.dom.Document;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXParseException;
+
+import com.romraider.Settings;
+import com.romraider.logger.ecu.EcuLogger;
+import com.romraider.logger.ecu.ui.handler.table.TableUpdateHandler;
+import com.romraider.maps.Rom;
+import com.romraider.maps.Table;
+import com.romraider.net.URL;
+import com.romraider.swing.AbstractFrame;
+import com.romraider.swing.CustomToolbarLayout;
+import com.romraider.swing.ECUEditorMenuBar;
+import com.romraider.swing.ECUEditorToolBar;
+import com.romraider.swing.JProgressPane;
+import com.romraider.swing.MDIDesktopPane;
+import com.romraider.swing.RomTree;
+import com.romraider.swing.RomTreeNode;
+import com.romraider.swing.RomTreeRootNode;
+import com.romraider.swing.TableFrame;
+import com.romraider.swing.TableToolBar;
+import com.romraider.util.SettingsManager;
+import com.romraider.util.SettingsManagerImpl;
+import com.romraider.xml.DOMRomUnmarshaller;
+import com.romraider.xml.RomNotFoundException;
+import com.sun.org.apache.xerces.internal.parsers.DOMParser;
 
 public class ECUEditor extends AbstractFrame {
     private static final long serialVersionUID = -7826850987392016292L;
@@ -92,13 +100,19 @@ public class ECUEditor extends AbstractFrame {
     private final SettingsManager settingsManager = new SettingsManagerImpl();
     private final RomTreeRootNode imageRoot = new RomTreeRootNode("Open Images");
     private final RomTree imageList = new RomTree(imageRoot);
-    public MDIDesktopPane rightPanel = new MDIDesktopPane();
+    public MDIDesktopPane rightPanel = new MDIDesktopPane(this);
     public JProgressPane statusPanel = new JProgressPane();
     private JSplitPane splitPane = new JSplitPane();
     private Rom lastSelectedRom = null;
     private ECUEditorToolBar toolBar;
     private final ECUEditorMenuBar menuBar;
     private Settings settings;
+    private final TableToolBar tableToolBar;
+    private final JPanel toolBarPanel = new JPanel();
+    private OpenImageWorker openImageWorker;
+    private CloseImageWorker closeImageWorker;
+    private SetUserLevelWorker setUserLevelWorker;
+    private LaunchLoggerWorker launchLoggerWorker;
 
     public ECUEditor() {
 
@@ -129,12 +143,27 @@ public class ECUEditor extends AbstractFrame {
         imageList.setScrollsOnExpand(true);
         imageList.setContainer(this);
 
-        //create menubar and toolbar
+        //create menubar
         menuBar = new ECUEditorMenuBar(this);
         this.setJMenuBar(menuBar);
-        toolBar = new ECUEditorToolBar(this);
-        this.add(toolBar, BorderLayout.NORTH);
         this.add(statusPanel, BorderLayout.SOUTH);
+
+        // create toolbars
+
+        toolBar = new ECUEditorToolBar(this, "Editor Tools");
+
+        tableToolBar = new TableToolBar("Table Tools", this);
+        tableToolBar.updateTableToolBar(null);
+        tableToolBar.toggleTableToolBar(false);
+
+        CustomToolbarLayout toolBarLayout = new CustomToolbarLayout(FlowLayout.LEFT, 0, 0);
+
+        toolBarPanel.setLayout(toolBarLayout);
+        toolBarPanel.add(toolBar);
+        toolBarPanel.add(tableToolBar);
+        toolBarPanel.setVisible(true);
+
+        this.add(toolBarPanel, BorderLayout.NORTH);
 
         //set remaining window properties
         setIconImage(new ImageIcon("./graphics/romraider-ico.gif").getImage());
@@ -209,25 +238,32 @@ public class ECUEditor extends AbstractFrame {
         repaint();
     }
 
+    @Override
     public void windowClosing(WindowEvent e) {
         handleExit();
     }
 
+    @Override
     public void windowOpened(WindowEvent e) {
     }
 
+    @Override
     public void windowClosed(WindowEvent e) {
     }
 
+    @Override
     public void windowIconified(WindowEvent e) {
     }
 
+    @Override
     public void windowDeiconified(WindowEvent e) {
     }
 
+    @Override
     public void windowActivated(WindowEvent e) {
     }
 
+    @Override
     public void windowDeactivated(WindowEvent e) {
     }
 
@@ -241,14 +277,16 @@ public class ECUEditor extends AbstractFrame {
 
     public void addRom(Rom input) {
         // add to ecu image list pane
-        RomTreeNode romNode = new RomTreeNode(input, settings.getUserLevel(), settings.isDisplayHighTables());
-        imageList.setRootVisible(true);
+        RomTreeNode romNode = new RomTreeNode(input, settings.getUserLevel(), settings.isDisplayHighTables(), this);
         imageRoot.add(romNode);
-        imageList.updateUI();
-
+        imageList.setRootVisible(true);
         imageList.expandRow(imageList.getRowCount() - 1);
-        imageList.updateUI();
-        setLastSelectedRom(input);
+        imageList.setRootVisible(false);
+
+        // Only set if no other rom has been selected.
+        if(null == getLastSelectedRom()) {
+            setLastSelectedRom(input);
+        }
 
         if (input.getRomID().isObsolete() && settings.isObsoleteWarning()) {
             JPanel infoPanel = new JPanel();
@@ -261,18 +299,16 @@ public class ECUEditor extends AbstractFrame {
             check.setHorizontalAlignment(JCheckBox.RIGHT);
 
             check.addActionListener(new ActionListener() {
+                @Override
                 public void actionPerformed(ActionEvent e) {
                     settings.setObsoleteWarning(((JCheckBox) e.getSource()).isSelected());
                 }
-            }
-            );
+            });
 
             infoPanel.add(check);
             showMessageDialog(this, infoPanel, "ECU Revision is Obsolete", INFORMATION_MESSAGE);
         }
         input.setContainer(this);
-        imageList.setRootVisible(false);
-        imageList.updateUI();
     }
 
     public void displayTable(TableFrame frame) {
@@ -290,39 +326,18 @@ public class ECUEditor extends AbstractFrame {
 
     public void removeDisplayTable(TableFrame frame) {
         frame.setVisible(false);
+
+        updateTableToolBar(null,false);
+
         rightPanel.remove(frame);
         rightPanel.repaint();
     }
 
     public void closeImage() {
-        for (int i = 0; i < imageRoot.getChildCount(); i++) {
-            RomTreeNode romTreeNode = (RomTreeNode) imageRoot.getChildAt(i);
-            Rom rom = romTreeNode.getRom();
-            if (rom == lastSelectedRom) {
-                Vector<Table> romTables = rom.getTables();
-                for (Table t : romTables) {
-                    rightPanel.remove(t.getFrame());
-                    TableUpdateHandler.getInstance().deregisterTable(t);
-                }
-
-                Vector<TreePath> path = new Vector<TreePath>();
-                path.add(new TreePath(romTreeNode.getPath()));
-                imageRoot.remove(i);
-                imageList.removeDescendantToggledPaths(path.elements());
-
-                break;
-            }
-        }
-
-        imageList.updateUI();
-
-        if (imageRoot.getChildCount() > 0) {
-            setLastSelectedRom(((RomTreeNode) imageRoot.getChildAt(0)).getRom());
-        } else {
-            // no other images open
-            setLastSelectedRom(null);
-        }
-        rightPanel.repaint();
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        closeImageWorker = new CloseImageWorker(this);
+        closeImageWorker.addPropertyChangeListener(this);
+        closeImageWorker.execute();
     }
 
     public void closeAllImages() {
@@ -347,10 +362,6 @@ public class ECUEditor extends AbstractFrame {
         for (int i = 0; i < imageRoot.getChildCount(); i++) {
             ((RomTreeNode) imageRoot.getChildAt(i)).updateFileName();
         }
-
-        toolBar.updateButtons();
-        menuBar.updateMenu();
-        imageList.updateUI();
     }
 
     public ECUEditorToolBar getToolBar() {
@@ -359,6 +370,19 @@ public class ECUEditor extends AbstractFrame {
 
     public void setToolBar(ECUEditorToolBar toolBar) {
         this.toolBar = toolBar;
+    }
+
+    public ECUEditorMenuBar getEditorMenuBar() {
+        return menuBar;
+    }
+
+    public TableToolBar getTableToolBar() {
+        return tableToolBar;
+    }
+
+    public void updateTableToolBar(Table currentTable, boolean enabled) {
+        tableToolBar.updateTableToolBar(currentTable);
+        tableToolBar.toggleTableToolBar(enabled);
     }
 
     public void setSettings(Settings settings) {
@@ -370,9 +394,10 @@ public class ECUEditor extends AbstractFrame {
     }
 
     public void setUserLevel(int userLevel) {
-        settings.setUserLevel(userLevel);
-        imageRoot.setUserLevel(userLevel, settings.isDisplayHighTables());
-        imageList.updateUI();
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        setUserLevelWorker = new SetUserLevelWorker(this, userLevel);
+        setUserLevelWorker.addPropertyChangeListener(this);
+        setUserLevelWorker.execute();
     }
 
     public Vector<Rom> getImages() {
@@ -384,70 +409,17 @@ public class ECUEditor extends AbstractFrame {
         return images;
     }
 
+    @Override
     public void propertyChange(PropertyChangeEvent evt) {
         imageList.updateUI();
         imageList.repaint();
     }
 
     public void openImage(File inputFile) throws Exception {
-
-        try {
-            update(getGraphics());
-            statusPanel.update("Parsing ECU definitions...", 0);
-            repaint();
-
-            byte[] input = readFile(inputFile);
-            DOMRomUnmarshaller domUms = new DOMRomUnmarshaller(settings, this);
-            DOMParser parser = new DOMParser();
-            statusPanel.update("Finding ECU definition...", 10);
-            repaint();
-            Rom rom;
-
-            // parse ecu definition files until result found
-            for (int i = 0; i < settings.getEcuDefinitionFiles().size(); i++) {
-                InputSource src = new InputSource(new FileInputStream(settings.getEcuDefinitionFiles().get(i)));
-
-                parser.parse(src);
-                Document doc = parser.getDocument();
-
-                try {
-                    rom = domUms.unmarshallXMLDefinition(doc.getDocumentElement(), input, statusPanel);
-                    statusPanel.update("Populating tables...", 50);
-                    repaint();
-                    rom.populateTables(input, statusPanel);
-                    rom.setFileName(inputFile.getName());
-
-                    statusPanel.update("Finalizing...", 90);
-                    repaint();
-                    addRom(rom);
-                    rom.setFullFileName(inputFile);
-                    return;
-
-                } catch (RomNotFoundException ex) {
-                    // rom was not found in current file, skip to next
-                }
-            }
-
-            // if code executes to this point, no ROM was found, report to user
-            showMessageDialog(this, "ECU Definition Not Found", "Error Loading " + inputFile.getName(), ERROR_MESSAGE);
-
-        } catch (SAXParseException spe) {
-            // catch general parsing exception - enough people don't unzip the defs that a better error message is in order
-            showMessageDialog(this, "Unable to read XML definitions.  Please make sure the definition file is correct.  If it is in a ZIP archive, unzip the file and try again.", "Error Loading " + inputFile.getName(), ERROR_MESSAGE);
-
-        } catch (StackOverflowError ex) {
-            // handles looped inheritance, which will use up all available memory
-            showMessageDialog(this, "Looped \"base\" attribute in XML definitions.", "Error Loading " + inputFile.getName(), ERROR_MESSAGE);
-
-        } catch (OutOfMemoryError ome) {
-            // handles Java heap space issues when loading multiple Roms.
-            showMessageDialog(this, "Error loading Image. Out of memeory.", "Error Loading " + inputFile.getName(), ERROR_MESSAGE);
-
-        } finally {
-            // remove progress bar
-            //progress.dispose();
-            statusPanel.update("Ready...", 0);
-        }
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        openImageWorker = new OpenImageWorker(this, inputFile);
+        openImageWorker.addPropertyChangeListener(statusPanel);
+        openImageWorker.execute();
     }
 
     public void openImages(File[] inputFiles) throws Exception {
@@ -460,7 +432,7 @@ public class ECUEditor extends AbstractFrame {
         }
     }
 
-    private byte[] readFile(File inputFile) throws IOException {
+    public byte[] readFile(File inputFile) throws IOException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         FileInputStream fis = new FileInputStream(inputFile);
         try {
@@ -475,7 +447,215 @@ public class ECUEditor extends AbstractFrame {
         return baos.toByteArray();
     }
 
+    public void launchLogger() {
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        launchLoggerWorker = new LaunchLoggerWorker(this);
+        launchLoggerWorker.addPropertyChangeListener(this);
+        launchLoggerWorker.execute();
+    }
+
     public SettingsManager getSettingsManager() {
         return this.settingsManager;
+    }
+
+    public RomTreeRootNode getImageRoot() {
+        return imageRoot;
+    }
+
+    public RomTree getImageList() {
+        return imageList;
+    }
+}
+
+class LaunchLoggerWorker extends SwingWorker<Void, Void> {
+    private final ECUEditor editor;
+
+    public LaunchLoggerWorker(ECUEditor editor) {
+        this.editor = editor;
+    }
+
+    @Override
+    protected Void doInBackground() throws Exception {
+        editor.statusPanel.setStatus("Launching Logger...");
+        setProgress(10);
+        EcuLogger.startLogger(javax.swing.WindowConstants.DISPOSE_ON_CLOSE, editor);
+        return null;
+    }
+
+    @Override
+    public void done() {
+        editor.statusPanel.setStatus("Ready...");
+        setProgress(0);
+        editor.getToolBar().updateButtons();
+        editor.getEditorMenuBar().updateMenu();
+        editor.setCursor(null);
+    }
+}
+
+class SetUserLevelWorker extends SwingWorker<Void, Void> {
+    private final ECUEditor editor;
+    int userLevel;
+
+    public SetUserLevelWorker(ECUEditor editor, int userLevel) {
+        this.editor = editor;
+        this.userLevel = userLevel;
+    }
+
+    @Override
+    protected Void doInBackground() throws Exception {
+        Settings settings = editor.getSettings();
+        RomTreeRootNode imageRoot = editor.getImageRoot();
+
+        settings.setUserLevel(userLevel);
+        imageRoot.setUserLevel(userLevel, settings.isDisplayHighTables());
+        return null;
+    }
+
+    @Override
+    public void done() {
+        editor.statusPanel.setStatus("Ready...");
+        setProgress(0);
+        editor.getToolBar().updateButtons();
+        editor.getEditorMenuBar().updateMenu();
+        editor.setCursor(null);
+    }
+}
+
+class CloseImageWorker extends SwingWorker<Void, Void> {
+
+    private final ECUEditor editor;
+
+    public CloseImageWorker(ECUEditor editor) {
+        this.editor = editor;
+    }
+
+    @Override
+    protected Void doInBackground() throws Exception {
+        RomTreeRootNode imageRoot = editor.getImageRoot();
+        RomTree imageList = editor.getImageList();
+
+        for (int i = 0; i < imageRoot.getChildCount(); i++) {
+            RomTreeNode romTreeNode = (RomTreeNode) imageRoot.getChildAt(i);
+            Rom rom = romTreeNode.getRom();
+            if (rom == editor.getLastSelectedRom()) {
+                Vector<Table> romTables = rom.getTables();
+                for (Table t : romTables) {
+                    editor.rightPanel.remove(t.getFrame());
+                    TableUpdateHandler.getInstance().deregisterTable(t);
+                }
+
+                Vector<TreePath> path = new Vector<TreePath>();
+                path.add(new TreePath(romTreeNode.getPath()));
+                imageRoot.remove(i);
+                imageList.removeDescendantToggledPaths(path.elements());
+
+                break;
+            }
+        }
+
+        if (imageRoot.getChildCount() > 0) {
+            editor.setLastSelectedRom(((RomTreeNode) imageRoot.getChildAt(0)).getRom());
+        } else {
+            // no other images open
+            editor.setLastSelectedRom(null);
+        }
+        editor.rightPanel.repaint();
+        return null;
+    }
+
+    @Override
+    public void done() {
+        editor.statusPanel.setStatus("Ready...");
+        setProgress(0);
+        editor.getToolBar().updateButtons();
+        editor.getEditorMenuBar().updateMenu();
+        editor.setCursor(null);
+    }
+}
+
+class OpenImageWorker extends SwingWorker<Void, Void> {
+
+    private final ECUEditor editor;
+    private final File inputFile;
+
+    public OpenImageWorker(ECUEditor editor, File inputFile) {
+        this.editor = editor;
+        this.inputFile = inputFile;
+    }
+
+    @Override
+    protected Void doInBackground() throws Exception {
+        try {
+            Settings settings = editor.getSettings();
+
+            editor.statusPanel.setStatus("Parsing ECU definitions...");
+            setProgress(0);
+
+            byte[] input = editor.readFile(inputFile);
+            DOMRomUnmarshaller domUms = new DOMRomUnmarshaller(settings, editor);
+            DOMParser parser = new DOMParser();
+
+            editor.statusPanel.setStatus("Finding ECU definition...");
+            setProgress(10);
+
+            Rom rom;
+
+            // parse ecu definition files until result found
+            for (int i = 0; i < settings.getEcuDefinitionFiles().size(); i++) {
+                InputSource src = new InputSource(new FileInputStream(settings.getEcuDefinitionFiles().get(i)));
+
+                parser.parse(src);
+                Document doc = parser.getDocument();
+
+                try {
+                    rom = domUms.unmarshallXMLDefinition(doc.getDocumentElement(), input, editor.statusPanel);
+
+                    editor.statusPanel.setStatus("Populating tables...");
+                    setProgress(50);
+
+                    rom.populateTables(input, editor.statusPanel);
+                    rom.setFileName(inputFile.getName());
+
+                    editor.statusPanel.setStatus("Finalizing...");
+                    setProgress(75);
+
+                    editor.addRom(rom);
+                    rom.setFullFileName(inputFile);
+
+                    editor.statusPanel.setStatus("Done loading image...");
+                    setProgress(100);
+                    return null;
+
+                } catch (RomNotFoundException ex) {
+                    // rom was not found in current file, skip to next
+                }
+            }
+
+            // if code executes to this point, no ROM was found, report to user
+            showMessageDialog(editor, "ECU Definition Not Found", "Error Loading " + inputFile.getName(), ERROR_MESSAGE);
+
+        } catch (SAXParseException spe) {
+            // catch general parsing exception - enough people don't unzip the defs that a better error message is in order
+            showMessageDialog(editor, "Unable to read XML definitions.  Please make sure the definition file is correct.  If it is in a ZIP archive, unzip the file and try again.", "Error Loading " + inputFile.getName(), ERROR_MESSAGE);
+
+        } catch (StackOverflowError ex) {
+            // handles looped inheritance, which will use up all available memory
+            showMessageDialog(editor, "Looped \"base\" attribute in XML definitions.", "Error Loading " + inputFile.getName(), ERROR_MESSAGE);
+
+        } catch (OutOfMemoryError ome) {
+            // handles Java heap space issues when loading multiple Roms.
+            showMessageDialog(editor, "Error loading Image. Out of memeory.", "Error Loading " + inputFile.getName(), ERROR_MESSAGE);
+
+        }
+        return null;
+    }
+
+    @Override
+    public void done() {
+        editor.statusPanel.setStatus("Ready...");
+        setProgress(0);
+        editor.getToolBar().updateButtons();
+        editor.getEditorMenuBar().updateMenu();
+        editor.setCursor(null);
     }
 }
